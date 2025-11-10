@@ -51,6 +51,7 @@
 tar_sql <- function(name,
                     path,
                     params = list(),
+                    sql_connect_func = NULL,
                     format = targets::tar_option_get("format"),
                     tidy_eval = targets::tar_option_get("tidy_eval"),
                     repository = targets::tar_option_get("repository"),
@@ -91,6 +92,7 @@ tar_sql <- function(name,
     resources = resources,
     retrieval = retrieval,
     cue = cue,
-    params_nm = params_nm
+    params_nm = params_nm,
+    sql_connect_func = sql_connect_func
   )
 }

@@ -63,7 +63,8 @@ tar_sql_raw <- function(
     resources = targets::tar_option_get("resources"),
     retrieval = targets::tar_option_get("retrieval"),
     cue = targets::tar_option_get("cue"),
-    params_nm = NULL
+    params_nm = NULL,
+    sql_connect_func = NULL
 ) {
   targets::tar_assert_scalar(name)
   targets::tar_assert_chr(name)
@@ -75,9 +76,13 @@ tar_sql_raw <- function(
   file_command <- tar_sql_file_command(path = path)
   file_dep <- basename(path)
 
+  sql_connect_func <- ifelse(is.null(sql_connect_func), default_sql_connect, sql_connect_func)
+  targets::tar_assert_function(sql_connect_func)
+
   query_command <- tar_sql_command(
     path = path,
     params = params,
+    sql_connect_func = sql_connect_func,
     file_dep = file_dep
   )
 
@@ -137,15 +142,18 @@ tar_sql_file_command <- function(path) {
 tar_sql_command <- function(
     path,
     params,
-    file_dep
+    file_dep,
+    sql_connect_func
 ) {
   args <- substitute(
     list(
       path = path,
+      sql_connect_func = sql_connect_func,
       params = params
     ),
     env = list(
       path = path,
+      sql_connect_func = sql_connect_func,
       params = params
     )
   )
