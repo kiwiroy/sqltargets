@@ -29,6 +29,7 @@
 #'   (not evaluated until the target runs)
 #'   so that upstream targets can serve as parameter values.
 #' @param params_nm Character of length 1, name of object passed to `params`.
+#' @param sql_connect_func Function to call to establish a connection to the database
 #' @examples
 #' targets::tar_dir({  # tar_dir() runs code from a temporary directory.
 #'   # Unparameterized SQL query:
@@ -72,12 +73,10 @@ tar_sql_raw <- function(
   targets::tar_assert_file(path)
   targets::tar_assert_lang(params)
   targets::tar_assert_not_expr(params)
+  targets::tar_assert_function(sql_connect_func)
 
   file_command <- tar_sql_file_command(path = path)
   file_dep <- basename(path)
-
-  sql_connect_func <- ifelse(is.null(sql_connect_func), default_sql_connect, sql_connect_func)
-  targets::tar_assert_function(sql_connect_func)
 
   query_command <- tar_sql_command(
     path = path,

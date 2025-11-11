@@ -1,5 +1,6 @@
 #' @title Target with a SQL query.
 #' @export
+#' @importFrom rlang %||%
 #' @description Shorthand to include a SQL query in a
 #'   `targets` pipeline.
 #' @details `tar_sql()` is an alternative to `tar_target()` for
@@ -78,6 +79,11 @@ tar_sql <- function(name,
     tidy_eval = tidy_eval
   )
 
+  sql_connect_func <- targets::tar_tidy_eval(
+    expr = sql_connect_func %||% sqltargets_option_get("sqltargets.sql_connect_func"),
+    envir = targets::tar_option_get("envir"),
+    tidy_eval = FALSE
+  )
 
   tar_sql_raw(
     name = name,
