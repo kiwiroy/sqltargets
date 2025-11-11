@@ -1,11 +1,10 @@
 default_sql_connect <- function (path) {
   connection_string <- stringr::str_extract(readr::read_lines(path, n_max = 1), "(?<=\\=).*")
-  connection_call <- paste0("con <- ", connection_string)
-  rlang::eval_bare(rlang::parse_expr(connection_call))
+  con <- rlang::eval_bare(rlang::parse_expr(connection_string))
   return(con)
 }
 
-source_sql_to_dataframe <- function(path, sql_connect_func = default_sql_connect, params = NULL) {
+source_sql_to_dataframe <- function(path, sql_connect_func = sqltargets_option_get("sqltargets.sql_connect_func") , params = NULL) {
   con <- sql_connect_func(path)
   on.exit(DBI::dbDisconnect(con))
   query <- readr::read_file(path)

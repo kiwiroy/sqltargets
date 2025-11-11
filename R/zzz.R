@@ -6,6 +6,7 @@ sqltargets_env <- function() {
 
 .onAttach <- function(lib, pkg) {
   jinjar_defaults <- jinjar::default_config()
+  sqltargets.env$sqltargets.sql_connect_func <- default_sql_connect
   sqltargets.env$sqltargets.template_engine <- "glue"
   sqltargets.env$sqltargets.glue_sql_opening_delimiter <- "{"
   sqltargets.env$sqltargets.glue_sql_closing_delimiter <- "}"

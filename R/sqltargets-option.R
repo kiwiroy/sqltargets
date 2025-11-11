@@ -11,6 +11,8 @@
 #'
 #'  - `"sqltargets.template_engine"` - Either 'dbi', 'glue' or 'jinjar'. Determines how the query file should be parsed.
 #'
+#'  - `"sqltargets.sql_connect_func"` - Function. A function that takes a single argument, the path to the SQL file,
+#'
 #'  - `"sqltargets.glue_sql_opening_delimiter"` - character. Length 1. The opening delimiter passed to `glue::glue_sql()`.
 #'
 #'  - `"sqltargets.glue_sql_closing_delimiter"` - character. Length 1. The closing delimiter passed to `glue::glue_sql()`.

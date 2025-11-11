@@ -2,6 +2,7 @@
 % Please edit documentation in R/sqltargets.R
 \docType{package}
 \name{sqltargets}
+\alias{sqltargets-package}
 \alias{sqltargets}
 \title{\code{sqltargets} package}
 \description{
@@ -10,4 +11,21 @@ targets extension for SQL files
 \details{
 See the README on
 \href{https://github.com/daranzolin/sqltargets#readme}{GitHub}
+}
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/daranzolin/sqltargets}
+  \item Report bugs at \url{https://github.com/daranzolin/sqltargets/issues}
+}
+
+}
+\author{
+\strong{Maintainer}: David Ranzolin \email{daranzolin@gmail.com} [copyright holder]
+
+Other contributors:
+\itemize{
+  \item Roy Storey \email{kiwiroy@protonmail.com} (\href{https://orcid.org/0000-0003-1375-7136}{ORCID}) [contributor]
+}
+
 }

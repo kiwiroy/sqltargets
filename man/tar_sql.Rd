@@ -8,6 +8,7 @@ tar_sql(
   name,
   path,
   params = list(),
+  sql_connect_func = NULL,
   format = targets::tar_option_get("format"),
   tidy_eval = targets::tar_option_get("tidy_eval"),
   repository = targets::tar_option_get("repository"),
@@ -24,21 +25,34 @@ tar_sql(
 )
 }
 \arguments{
-\item{name}{Symbol, name of the target. A target
-name must be a valid name for a symbol in R, and it
+\item{name}{Symbol, name of the target.
+In \code{\link[targets:tar_target]{tar_target()}}, \code{name} is an unevaluated symbol, e.g.
+\code{tar_target(name = data)}.
+In \code{\link[targets:tar_target_raw]{tar_target_raw()}}, \code{name} is a character string, e.g.
+\code{tar_target_raw(name = "data")}.
+
+A target name must be a valid name for a symbol in R, and it
 must not start with a dot. Subsequent targets
 can refer to this name symbolically to induce a dependency relationship:
 e.g. \code{tar_target(downstream_target, f(upstream_target))} is a
 target named \code{downstream_target} which depends on a target
-\code{upstream_target} and a function \code{f()}. In addition, a target's
+\code{upstream_target} and a function \code{f()}.
+
+In most cases, The target name is the name of its local data file
+in storage. Some file systems are not case sensitive, which means
+converting a name to a different case may overwrite a different target.
+Please ensure all target names have unique names when converted to
+lower case.
+
+In addition, a target's
 name determines its random number generator seed. In this way,
 each target runs with a reproducible seed so someone else
 running the same pipeline should get the same results,
 and no two targets in the same pipeline share the same seed.
 (Even dynamic branches have different names and thus different seeds.)
 You can recover the seed of a completed target
-with \code{tar_meta(your_target, seed)} and run \code{set.seed()} on the result
-to locally recreate the target's initial RNG state.}
+with \code{tar_meta(your_target, seed)} and run \code{\link[targets:tar_seed_set]{tar_seed_set()}}
+on the result to locally recreate the target's initial RNG state.}
 
 \item{path}{Character of length 1 to the single `*.sql` source file to be executed.
 Defaults to the working directory of the `targets` pipeline.}
@@ -48,6 +62,8 @@ Defaults to the working directory of the `targets` pipeline.}
 that are passed to `jinjar::render()`. The list is quoted
 (not evaluated until the target runs)
 so that upstream targets can serve as parameter values.}
+
+\item{sql_connect_func}{Function to call to establish a connection to the database}
 
 \item{format}{Optional storage format for the target's return value.
 With the exception of \code{format = "file"}, each target
@@ -75,13 +91,15 @@ for details for instructions.
 See the cloud storage section of
 \url{https://books.ropensci.org/targets/data.html}
 for details for instructions.
+\item A character string from \code{\link[targets:tar_repository_cas]{tar_repository_cas()}} for content-addressable
+storage.
 }
 
 Note: if \code{repository} is not \code{"local"} and \code{format} is \code{"file"}
 then the target should create a single output file.
 That output file is uploaded to the cloud and tracked for changes
-where it exists in the cloud. The local file is deleted after
-the target runs.}
+where it exists in the cloud. As of \code{targets} version 1.11.0 and higher,
+the local file is no longer deleted after the target runs.}
 
 \item{iteration}{Character of length 1, name of the iteration mode
 of the target. Choices:
@@ -91,7 +109,10 @@ aggregation happens with \code{vctrs::vec_c()}.
 \item \code{"list"}, branching happens with \verb{[[]]} and aggregation happens with
 \code{list()}.
 \item \code{"group"}: \code{dplyr::group_by()}-like functionality to branch over
-subsets of a data frame. The target's return value must be a data
+subsets of a non-dynamic data frame.
+For \code{iteration = "group"}, the target must not by dynamic
+(the \code{pattern} argument of \code{\link[targets:tar_target]{tar_target()}} must be left \code{NULL}).
+The target's return value must be a data
 frame with a special \code{tar_group} column of consecutive integers
 from 1 through the number of groups. Each integer designates a group,
 and a branch is created for each collection of rows in a group.
@@ -104,28 +125,54 @@ stops and throws an error. Options:
 \itemize{
 \item \code{"stop"}: the whole pipeline stops and throws an error.
 \item \code{"continue"}: the whole pipeline keeps going.
-\item \code{"abridge"}: any currently running targets keep running,
-but no new targets launch after that.
-(Visit \url{https://books.ropensci.org/targets/debugging.html}
-to learn how to debug targets using saved workspaces.)
 \item \code{"null"}: The errored target continues and returns \code{NULL}.
 The data hash is deliberately wrong so the target is not
-up to date for the next run of the pipeline.
+up to date for the next run of the pipeline. In addition,
+as of \code{targets} version 1.8.0.9011, a value of \code{NULL} is given
+to upstream dependencies with \code{error = "null"} if loading fails.
+\item \code{"abridge"}: any currently running targets keep running,
+but no new targets launch after that.
+\item \code{"trim"}: all currently running targets stay running. A queued
+target is allowed to start if:
+\enumerate{
+\item It is not downstream of the error, and
+\item It is not a sibling branch from the same \code{\link[targets:tar_target]{tar_target()}} call
+(if the error happened in a dynamic branch).
+}
+
+The idea is to avoid starting any new work that the immediate error
+impacts. \code{error = "trim"} is just like \code{error = "abridge"},
+but it allows potentially healthy regions of the dependency graph
+to begin running.
+(Visit \url{https://books.ropensci.org/targets/debugging.html}
+to learn how to debug targets using saved workspaces.)
 }}
 
-\item{memory}{Character of length 1, memory strategy.
-If \code{"persistent"}, the target stays in memory
+\item{memory}{Character of length 1, memory strategy. Possible values:
+\itemize{
+\item \code{"auto"} (default): equivalent to \code{memory = "transient"} in almost
+all cases. But to avoid superfluous reads from disk,
+\code{memory = "auto"} is equivalent to \code{memory = "persistent"} for
+for non-dynamically-branched targets that other targets
+dynamically branch over. For example: if your pipeline has
+\code{tar_target(name = y, command = x, pattern = map(x))},
+then \code{tar_target(name = x, command = f(), memory = "auto")}
+will use persistent memory in order to avoid rereading all of \code{x}
+for every branch of \code{y}.
+\item \code{"transient"}: the target gets unloaded
+after every new target completes.
+Either way, the target gets automatically loaded into memory
+whenever another target needs the value.
+\item \code{"persistent"}: the target stays in memory
 until the end of the pipeline (unless \code{storage} is \code{"worker"},
 in which case \code{targets} unloads the value from memory
 right after storing it in order to avoid sending
 copious data over a network).
-If \code{"transient"}, the target gets unloaded
-after every new target completes.
-Either way, the target gets automatically loaded into memory
-whenever another target needs the value.
-For cloud-based dynamic files
+}
+
+For cloud-based file targets
 (e.g. \code{format = "file"} with \code{repository = "aws"}),
-this memory strategy applies to the
+the \code{memory} option applies to the
 temporary local copy of the file:
 \code{"persistent"} means it remains until the end of the pipeline
 and is then deleted,
@@ -133,18 +180,29 @@ and \code{"transient"} means it gets deleted as soon as possible.
 The former conserves bandwidth,
 and the latter conserves local storage.}
 
-\item{garbage_collection}{Logical, whether to run \code{base::gc()}
-just before the target runs.}
+\item{garbage_collection}{Logical: \code{TRUE} to run \code{base::gc()}
+just before the target runs, in whatever R process it is about to run
+(which could be a parallel worker).
+\code{FALSE} to omit garbage collection.
+Numeric values get converted to \code{FALSE}.
+The \code{garbage_collection} option in \code{\link[targets:tar_option_set]{tar_option_set()}}
+is independent of the
+argument of the same name in \code{\link[targets:tar_target]{tar_target()}}.}
 
-\item{deployment}{Character of length 1, only relevant to
-\code{\link[targets:tar_make_clustermq]{tar_make_clustermq()}} and \code{\link[targets:tar_make_future]{tar_make_future()}}. If \code{"worker"},
-the target builds on a parallel worker. If \code{"main"},
-the target builds on the host machine / process managing the pipeline.}
+\item{deployment}{Character of length 1. If \code{deployment} is
+\code{"main"}, then the target will run on the central controlling R process.
+Otherwise, if \code{deployment} is \code{"worker"} and you set up the pipeline
+with distributed/parallel computing, then
+the target runs on a parallel worker. For more on distributed/parallel
+computing in \code{targets}, please visit
+\url{https://books.ropensci.org/targets/crew.html}.}
 
-\item{priority}{Numeric of length 1 between 0 and 1. Controls which
-targets get deployed first when multiple competing targets are ready
-simultaneously. Targets with priorities closer to 1 get built earlier
-(and polled earlier in \code{\link[targets:tar_make_future]{tar_make_future()}}).}
+\item{priority}{Deprecated on 2025-04-08 (\code{targets} version 1.10.1.9013).
+\code{targets} has moved to a more efficient scheduling algorithm
+(\url{https://github.com/ropensci/targets/issues/1458})
+which cannot support priorities.
+The \code{priority} argument of \code{\link[targets:tar_target]{tar_target()}} no longer has a reliable
+effect on execution order.}
 
 \item{resources}{Object returned by \code{tar_resources()}
 with optional settings for high-performance computing
@@ -152,47 +210,41 @@ functionality, alternative data storage formats,
 and other optional capabilities of \code{targets}.
 See \code{tar_resources()} for details.}
 
-\item{storage}{Character of length 1, only relevant to
-\code{\link[targets:tar_make_clustermq]{tar_make_clustermq()}} and \code{\link[targets:tar_make_future]{tar_make_future()}}.
+\item{storage}{Character string to control when the output of the target
+is saved to storage. Only relevant when using \code{targets}
+with parallel workers (\url{https://books.ropensci.org/targets/crew.html}).
 Must be one of the following values:
 \itemize{
+\item \code{"worker"} (default): the worker saves/uploads the value.
 \item \code{"main"}: the target's return value is sent back to the
 host machine and saved/uploaded locally.
-\item \code{"worker"}: the worker saves/uploads the value.
-\item \code{"none"}: almost never recommended. It is only for
-niche situations, e.g. the data needs to be loaded
-explicitly from another language. If you do use it,
-then the return value of the target is totally ignored
-when the target ends, but
-each downstream target still attempts to load the data file
-(except when \code{retrieval = "none"}).
-
-If you select \code{storage = "none"}, then
-the return value of the target's command is ignored,
-and the data is not saved automatically.
-As with dynamic files (\code{format = "file"}) it is the
-responsibility of the user to write to
-the data store from inside the target.
-
-The distinguishing feature of \code{storage = "none"}
-(as opposed to \code{format = "file"})
-is that in the general case,
-downstream targets will automatically try to load the data
-from the data store as a dependency. As a corollary, \code{storage = "none"}
-is completely unnecessary if \code{format} is \code{"file"}.
+\item \code{"none"}: \code{targets} makes no attempt to save the result
+of the target to storage in the location where \code{targets}
+expects it to be. Saving to storage is the responsibility
+of the user. Use with caution.
 }}
 
-\item{retrieval}{Character of length 1, only relevant to
-\code{\link[targets:tar_make_clustermq]{tar_make_clustermq()}} and \code{\link[targets:tar_make_future]{tar_make_future()}}.
+\item{retrieval}{Character string to control when the current target
+loads its dependencies into memory before running.
+(Here, a "dependency" is another target upstream that the current one
+depends on.) Only relevant when using \code{targets}
+with parallel workers (\url{https://books.ropensci.org/targets/crew.html}).
 Must be one of the following values:
 \itemize{
+\item \code{"auto"} (default): equivalent to \code{retrieval = "worker"} in almost all
+cases. But to avoid unnecessary reads from disk, \code{retrieval = "auto"}
+is equivalent to \code{retrieval = "main"} for dynamic branches that
+branch over non-dynamic targets. For example: if your pipeline has
+\code{tar_target(x, command = f())}, then
+\code{tar_target(y, command = x, pattern = map(x), retrieval = "auto")}
+will use \code{"main"} retrieval in order to avoid rereading all of \code{x}
+for every branch of \code{y}.
+\item \code{"worker"}: the worker loads the target's dependencies.
 \item \code{"main"}: the target's dependencies are loaded on the host machine
-and sent to the worker before the target builds.
-\item \code{"worker"}: the worker loads the targets dependencies.
-\item \code{"none"}: the dependencies are not loaded at all.
-This choice is almost never recommended. It is only for
-niche situations, e.g. the data needs to be loaded
-explicitly from another language.
+and sent to the worker before the target runs.
+\item \code{"none"}: \code{targets} makes no attempt to load its
+dependencies. With \code{retrieval = "none"}, loading dependencies
+is the responsibility of the user. Use with caution.
 }}
 
 \item{cue}{An optional object from \code{tar_cue()} to customize the

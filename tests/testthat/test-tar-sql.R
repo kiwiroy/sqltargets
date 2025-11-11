@@ -256,3 +256,30 @@ targets::tar_test("tar_sql() with indexed dbBind DBI engine", {
   out <- targets::tar_read(report)
   expect_equal(out, data.frame(Species = rep("setosa", 22)))
 })
+
+
+targets::tar_test("tar_sql() works with alternative sql_connect_func", {
+  lines <- c(
+    "-- tar_load(table_data)",
+    "select count(*) as row_count from mtcars",
+    ""
+  )
+  writeLines(lines, "query.sql")
+
+  targets::tar_script({
+    library(sqltargets)
+    sqltargets_option_set("sqltargets.template_engine", "glue")
+    my_connect <- function (path) {
+      con <- DBI::dbConnect(RSQLite::SQLite())
+      DBI::dbWriteTable(con, 'mtcars', datasets::mtcars)
+      return(con)
+    }
+    list(
+      targets::tar_target(table_data, datasets::mtcars),
+      tar_sql(report, path = "query.sql", sql_connect_func = my_connect)
+    )
+  })
+  suppressMessages(targets::tar_make(callr_function = NULL))
+  out <- targets::tar_read(report)
+  expect_equal(out, data.frame(row_count = 32))
+})
